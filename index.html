@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Fire Monitor (With Sound)</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background-color: #f0f2f5; display: flex; flex-direction: column; align-items: center; padding: 20px; transition: background 0.3s; }
+        .dashboard { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; width: 100%; max-width: 900px; margin-top: 20px; }
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; }
+        .card h3 { color: #888; font-size: 0.8rem; text-transform: uppercase; margin-bottom: 5px; }
+        .card .value { font-size: 2rem; font-weight: bold; color: #333; }
+        
+        /* Main Status Card */
+        .status-card { grid-column: span 3; padding: 30px; display: flex; justify-content: space-between; align-items: center; }
+        .status-text { font-size: 3rem; font-weight: bold; }
+        
+        /* Confidence Bars */
+        .confidence-box { width: 40%; text-align: left; }
+        .bar-container { background: #eee; border-radius: 5px; height: 10px; width: 100%; margin: 5px 0 15px 0; overflow: hidden; }
+        .bar-fill { height: 100%; transition: width 0.3s; }
+        .bar-fire { background: #dc3545; }
+        .bar-safe { background: #28a745; }
+        
+        button { padding: 15px 30px; background: #007bff; color: white; border: none; border-radius: 50px; cursor: pointer; font-size: 1.2rem; margin-bottom: 20px; }
+        button:disabled { background: #6c757d; cursor: not-allowed; }
+
+        /* Colors */
+        .safe { color: #28a745 !important; }
+        .fire { color: #dc3545 !important; animation: pulse 0.8s infinite; }
+        .bg-fire { background-color: #ffe6e6; }
+        
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+    </style>
+</head>
+<body>
+
+    <h1>🔥 AI Sensor Fusion Dashboard</h1>
+    <button id="connectBtn">🔌 Connect via USB</button>
+
+    <audio id="alarmSound" src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" preload="auto" loop></audio>
+
+    <div class="dashboard">
+        <div class="card status-card">
+            <div>
+                <h3>System Status</h3>
+                <div class="status-text" id="statusVal">Waiting...</div>
+            </div>
+            <div class="confidence-box">
+                <h3>AI Confidence: FIRE</h3>
+                <div class="bar-container"><div id="fireBar" class="bar-fill bar-fire" style="width: 0%"></div></div>
+                
+                <h3>AI Confidence: SAFE</h3>
+                <div class="bar-container"><div id="safeBar" class="bar-fill bar-safe" style="width: 0%"></div></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Temperature</h3>
+            <div class="value"><span id="tempVal">--</span> °C</div>
+        </div>
+        <div class="card">
+            <h3>Humidity</h3>
+            <div class="value"><span id="humVal">--</span> %</div>
+        </div>
+        <div class="card">
+            <h3>Pressure</h3>
+            <div class="value"><span id="presVal">--</span> hPa</div>
+        </div>
+    </div>
+
+<script>
+    const connectBtn = document.getElementById('connectBtn');
+    const statusVal = document.getElementById('statusVal');
+    const tempVal = document.getElementById('tempVal');
+    const humVal = document.getElementById('humVal');
+    const presVal = document.getElementById('presVal');
+    const fireBar = document.getElementById('fireBar');
+    const safeBar = document.getElementById('safeBar');
+    const alarmSound = document.getElementById('alarmSound');
+
+    let port;
+    let reader;
+    let isAlarmPlaying = false; // Track sound state
+
+    connectBtn.addEventListener('click', async () => {
+        try {
+            if (!("serial" in navigator)) {
+                alert("Please use Chrome or Edge.");
+                return;
+            }
+            port = await navigator.serial.requestPort();
+            await port.open({ baudRate: 115200 });
+
+            const textDecoder = new TextDecoderStream();
+            port.readable.pipeTo(textDecoder.writable);
+            reader = textDecoder.readable.getReader();
+
+            document.getElementById('connectBtn').innerText = "✅ Connected";
+            document.getElementById('connectBtn').disabled = true;
+            readLoop();
+        } catch (err) {
+            console.error("Error connecting:", err);
+            alert("Connection failed. Close Arduino Serial Monitor first!");
+        }
+    });
+
+    async function readLoop() {
+        let buffer = "";
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += value;
+            let lines = buffer.split('\n');
+            buffer = lines.pop(); 
+
+            for (const line of lines) {
+                if (line.trim().startsWith('{')) {
+                    try { updateDashboard(JSON.parse(line)); } catch (e) {}
+                }
+            }
+        }
+    }
+
+    function updateDashboard(data) {
+        tempVal.innerText = data.temp.toFixed(1);
+        humVal.innerText = data.hum.toFixed(1);
+        presVal.innerText = data.pressure.toFixed(1);
+        
+        // Update Status Text
+        const status = data.status.toUpperCase();
+        statusVal.innerText = status;
+
+        if (status.includes("FIRE")) {
+            statusVal.className = "status-text fire";
+            document.body.className = "bg-fire";
+            
+            // PLAY SOUND
+            if (!isAlarmPlaying) {
+                alarmSound.play().catch(error => console.log("Browser blocked audio: interact first"));
+                isAlarmPlaying = true;
+            }
+
+        } else {
+            statusVal.className = "status-text safe";
+            document.body.className = "";
+            
+            // STOP SOUND
+            if (isAlarmPlaying) {
+                alarmSound.pause();
+                alarmSound.currentTime = 0; // Reset to start
+                isAlarmPlaying = false;
+            }
+        }
+
+        // Update Confidence Bars
+        fireBar.style.width = (data.conf_fire * 100) + "%";
+        safeBar.style.width = (data.conf_safe * 100) + "%";
+    }
+</script>
+</body>
+</html>
