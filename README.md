@@ -1,0 +1,2 @@
+# Real-Time-Fire-Detection-Using-Arduino-Nano-33-BLE-Sense-Rev-2-and-Edge-Impulse-Studio
+This project presents a real-time smart fire detection system using the Arduino Nano 33 BLE Sense Rev 2 and Edge Impulse Studio. The system captures environmental patterns using sensor fusion—combining onboard temperature, humidity, and pressure sensors—and classifies conditions such as "Fire" and "Safe" in real time
